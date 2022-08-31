@@ -102,7 +102,7 @@ impl Packet {
             return None;
         }
         let mut commands = Vec::new();
-        // If the `protocol_version` is 2, it means there are multiply commands in the payload.
+        // If the `protocol_version` is 2, it means there are multiple commands in the payload.
         if self.header.protocol_version == 2 {
             let decompressed = decompress_to_vec_zlib(&self.json_payload).unwrap();
             let mut offset = 0;
