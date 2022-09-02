@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use crate::{
     api::{HostInfo, LiveDanmuAuthInfoResponse, LiveRoomInfoResponse, Request, Response},
-    packet::{OperationCode, Packet},
+    packet::Packet,
 };
 
 type StreamSender = SplitSink<WebSocketStream<Stream<TcpStream, TlsStream<TcpStream>>>, Message>;
@@ -54,20 +54,20 @@ impl LiveDanmuStream {
     }
 
     /// Connect to the live Danmu stream.
-    pub async fn connect(&mut self) -> Receiver<CommandType> {
+    pub async fn connect(&mut self) -> Receiver<Command> {
         self.prepare().await;
 
         let host_info = self.select_host();
         let (ws_stream, _) = connect_async(host_info.get_wss_url()).await.unwrap();
-        println!("Live Danmu stream handshake has been successfully completed");
+        println!("🔗 直播间弹幕服务器连接建立完成");
         let (sender, receiver) = ws_stream.split();
 
         self.heartbeat_loop(sender);
-        println!("Started the heartbeat loop");
+        println!("💗 开始发送心跳包");
 
         let (tx, rx) = unbounded();
         self.receiver_loop(receiver, tx);
-        println!("Started the receiver loop");
+        println!("📺 开始收取直播间消息");
         rx
     }
 
@@ -94,27 +94,38 @@ impl LiveDanmuStream {
         });
     }
 
-    fn receiver_loop(&self, receiver: StreamReceiver, tx: Sender<CommandType>) {
+    fn receiver_loop(&self, receiver: StreamReceiver, tx: Sender<Command>) {
         let receiver = Mutex::new(receiver);
         task::spawn(async move {
             loop {
                 if let Message::Binary(bytes) = receiver.lock().await.next().await.unwrap().unwrap()
                 {
                     let packet = Packet::from_bytes(&bytes);
-                    // We only need to handle the normal cmd packet.
-                    if packet.get_operation_code() != OperationCode::Normal {
+                    let cmd_json_vec = packet.get_command_json();
+                    if cmd_json_vec.is_none() {
                         continue;
                     }
-                    for cmd in packet.get_command_json().unwrap() {
-                        let cmd_value: Value = serde_json::from_str(cmd.as_str()).unwrap();
-                        let cmd_type = match cmd_value["cmd"].as_str().unwrap() {
-                            "DANMU_MSG" => CommandType::Danmu(
+                    for cmd_json in cmd_json_vec.unwrap() {
+                        let cmd_value: Value = serde_json::from_str(cmd_json.as_str()).unwrap();
+                        let cmd = match cmd_value["cmd"].as_str().unwrap() {
+                            "DANMU_MSG" => Command::Danmu(
                                 cmd_value["info"][2][1].as_str().unwrap().to_string(),
                                 cmd_value["info"][1].as_str().unwrap().to_string(),
                             ),
-                            _ => continue,
+                            "INTERACT_WORD" => Command::InteractWord(
+                                cmd_value["data"]["uname"].as_str().unwrap().to_string(),
+                            ),
+                            "SEND_GIFT" => Command::SendGift(
+                                cmd_value["data"]["uname"].as_str().unwrap().to_string(),
+                                cmd_value["data"]["action"].as_str().unwrap().to_string(),
+                                cmd_value["data"]["giftName"].as_str().unwrap().to_string(),
+                                cmd_value["data"]["num"].as_u64().unwrap(),
+                            ),
+                            _ => {
+                                continue;
+                            }
                         };
-                        tx.send(cmd_type).await.unwrap();
+                        tx.send(cmd).await.unwrap();
                     }
                 };
             }
@@ -128,6 +139,13 @@ impl LiveDanmuStream {
 }
 
 // TODO: support more command types.
-pub enum CommandType {
-    Danmu(/* User */ String, /* User */ String),
+pub enum Command {
+    Danmu(/* Username */ String, /* Danmu content */ String),
+    InteractWord(/* Username */ String),
+    SendGift(
+        /* Username */ String,
+        /* Action */ String,
+        /* Gift name */ String,
+        /* Gift count */ u64,
+    ),
 }

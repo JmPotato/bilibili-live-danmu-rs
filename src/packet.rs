@@ -101,6 +101,9 @@ impl Packet {
         if self.header.operation_code() != OperationCode::Normal {
             return None;
         }
+        if self.header.total_size <= 20 {
+            return None;
+        }
         let mut commands = Vec::new();
         // If the `protocol_version` is 2, it means there are multiple commands in the payload.
         if self.header.protocol_version == 2 {
@@ -118,7 +121,7 @@ impl Packet {
                 offset += header.total_size as usize;
             }
         } else {
-            commands.push(String::from_utf8(self.json_payload.clone()).unwrap())
+            commands.push(String::from_utf8(self.json_payload.clone()).unwrap());
         }
         Some(commands)
     }
