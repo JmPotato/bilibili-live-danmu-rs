@@ -20,7 +20,7 @@ OPTIONS:
 
 ## Example
 
-[TBD]
+<img width="468" alt="Example" src="https://user-images.githubusercontent.com/1446531/188175857-5d2f7067-2c9e-4a3a-98ce-2e314a6c0a65.png">
 
 ## Reference
 
